@@ -1,0 +1,5 @@
+alpaca-py>=0.28.0
+python-dotenv>=1.0.0
+pandas>=2.0.0
+matplotlib>=3.8.0
+mplfinance>=0.12.9b7
