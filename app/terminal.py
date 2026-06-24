@@ -1,283 +1,143 @@
-"""Tkinter market data terminal — historical chart and live quotes."""
-
-from __future__ import annotations
+"""Simple Tkinter UI for live quotes and historical chart."""
 
 import queue
-import threading
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
-import mplfinance as mpf
-import pandas as pd
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-from data_connector import QuoteStreamer, fetch_historical_bars, get_paper_api_url, verify_paper_auth
-
-DEFAULT_SYMBOL = "AAPL"
-HISTORY_DAYS = 30
-BAR_MINUTES = 5
+from data_connector import QuoteStreamer, fetch_historical_bars
 
 
 class MarketDataTerminal(tk.Tk):
-  def __init__(self) -> None:
-    super().__init__()
-    self.title("Mini Market Data Terminal — Alpaca")
-    self.geometry("1100x720")
-    self.minsize(900, 600)
+    def __init__(self) -> None:
+        super().__init__()
+        self.title("Market Data Terminal")
+        self.geometry("900x600")
 
-    self._event_queue: queue.Queue = queue.Queue()
-    self._streamer = QuoteStreamer(
-      on_quote=self._enqueue_quote,
-      on_trade=self._enqueue_trade,
-    )
-    self._live_symbol = tk.StringVar(value=DEFAULT_SYMBOL)
-    self._history_symbol = tk.StringVar(value=DEFAULT_SYMBOL)
-    self._status = tk.StringVar(
-      value=f"Connecting to {get_paper_api_url()}…"
-    )
+        self.symbol = tk.StringVar(value="AAPL")
+        self.bid = tk.StringVar(value="—")
+        self.ask = tk.StringVar(value="—")
+        self.last = tk.StringVar(value="—")
 
-    self._bid = tk.StringVar(value="—")
-    self._ask = tk.StringVar(value="—")
-    self._last = tk.StringVar(value="—")
-    self._quote_time = tk.StringVar(value="—")
+        self._queue: queue.Queue = queue.Queue()
+        self._status = tk.StringVar(value="Enter a ticker and click Subscribe")
+        self._streamer = QuoteStreamer(
+            on_quote=lambda q: self._queue.put(("quote", q)),
+            on_trade=lambda t: self._queue.put(("trade", t)),
+            on_error=lambda msg: self._queue.put(("error", msg)),
+        )
 
-    self._build_ui()
-    self._poll_events()
-    self._verify_auth_async()
-    self.protocol("WM_DELETE_WINDOW", self._on_close)
+        notebook = ttk.Notebook(self)
+        notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-  def _verify_auth_async(self) -> None:
-    def _check() -> None:
-      try:
-        message = verify_paper_auth()
-      except ValueError as exc:
-        message = str(exc)
-      except Exception as exc:
-        message = f"Paper API auth failed: {exc}"
-      self.after(0, lambda: self._set_status(message))
+        live = ttk.Frame(notebook, padding=10)
+        history = ttk.Frame(notebook, padding=10)
+        notebook.add(live, text="Live Quotes")
+        notebook.add(history, text="Historical Chart")
 
-    threading.Thread(target=_check, daemon=True).start()
+        self._build_live_tab(live)
+        self._build_history_tab(history)
+        self._poll()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-  def _build_ui(self) -> None:
-    header = ttk.Frame(self, padding=10)
-    header.pack(fill=tk.X)
-    ttk.Label(
-      header,
-      text="Mini Market Data Terminal",
-      font=("Helvetica", 16, "bold"),
-    ).pack(side=tk.LEFT)
-    ttk.Label(header, textvariable=self._status, foreground="#555").pack(
-      side=tk.RIGHT
-    )
+    def _build_live_tab(self, parent: ttk.Frame) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X)
+        ttk.Label(row, text="Ticker:").pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=self.symbol, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(row, text="Subscribe", command=self._subscribe).pack(side=tk.LEFT)
+        ttk.Label(parent, textvariable=self._status, foreground="gray").pack(
+            anchor=tk.W, pady=(8, 0)
+        )
 
-    notebook = ttk.Notebook(self)
-    notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+        for label, var in [("Bid", self.bid), ("Ask", self.ask), ("Last", self.last)]:
+            ttk.Label(parent, text=f"{label}:").pack(anchor=tk.W, pady=(10, 0))
+            ttk.Label(parent, textvariable=var, font=("Helvetica", 18)).pack(anchor=tk.W)
 
-    self._live_tab = ttk.Frame(notebook, padding=10)
-    self._history_tab = ttk.Frame(notebook, padding=10)
-    notebook.add(self._live_tab, text="Live Quotes")
-    notebook.add(self._history_tab, text="Historical Chart")
+    def _build_history_tab(self, parent: ttk.Frame) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X)
+        ttk.Label(row, text="Ticker:").pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=self.symbol, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(row, text="Load Chart", command=self._load_chart).pack(side=tk.LEFT)
+        self._chart_frame = ttk.Frame(parent)
+        self._chart_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        self._canvas = None
 
-    self._build_live_tab()
-    self._build_history_tab()
+    def _subscribe(self) -> None:
+        symbol = self.symbol.get().strip().upper()
+        if not symbol:
+            messagebox.showwarning("Error", "Enter a ticker.")
+            return
+        self.bid.set("—")
+        self.ask.set("—")
+        self.last.set("—")
+        self._status.set(f"Subscribing to {symbol}…")
+        try:
+            self._streamer.subscribe(symbol)
+            self._status.set(f"Streaming {symbol} (updates during market hours)")
+        except Exception as exc:
+            self._status.set("Subscribe failed")
+            messagebox.showerror("Error", str(exc))
 
-  def _build_live_tab(self) -> None:
-    controls = ttk.Frame(self._live_tab)
-    controls.pack(fill=tk.X, pady=(0, 16))
+    def _load_chart(self) -> None:
+        symbol = self.symbol.get().strip().upper()
+        if not symbol:
+            messagebox.showwarning("Error", "Enter a ticker.")
+            return
+        try:
+            df = fetch_historical_bars(symbol)
+            if df.empty:
+                messagebox.showinfo("No Data", f"No data for {symbol}")
+                return
+            self._show_chart(symbol, df)
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
 
-    ttk.Label(controls, text="Ticker:").pack(side=tk.LEFT)
-    entry = ttk.Entry(controls, textvariable=self._live_symbol, width=12)
-    entry.pack(side=tk.LEFT, padx=(6, 10))
-    entry.bind("<Return>", lambda _e: self._start_stream())
+    def _show_chart(self, symbol: str, df) -> None:
+        if self._canvas:
+            self._canvas.get_tk_widget().destroy()
 
-    ttk.Button(controls, text="Subscribe", command=self._start_stream).pack(
-      side=tk.LEFT, padx=(0, 6)
-    )
-    ttk.Button(controls, text="Stop", command=self._stop_stream).pack(side=tk.LEFT)
+        fig, (ax_price, ax_vol) = plt.subplots(2, 1, figsize=(8, 5), sharex=True)
+        ax_price.plot(df.index, df["open"], label="Open", alpha=0.7)
+        ax_price.plot(df.index, df["high"], label="High", alpha=0.7)
+        ax_price.plot(df.index, df["low"], label="Low", alpha=0.7)
+        ax_price.plot(df.index, df["close"], label="Close")
+        ax_price.set_title(f"{symbol} — 30 days, 5-min OHLCV")
+        ax_price.set_ylabel("Price")
+        ax_price.legend(loc="upper left", fontsize=8)
+        ax_vol.bar(df.index, df["volume"], width=0.003)
+        ax_vol.set_ylabel("Volume")
+        fig.tight_layout()
 
-    quote_frame = ttk.LabelFrame(self._live_tab, text="Live Market Data", padding=20)
-    quote_frame.pack(fill=tk.BOTH, expand=True)
+        self._canvas = FigureCanvasTkAgg(fig, master=self._chart_frame)
+        self._canvas.draw()
+        self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-    rows = [
-      ("Bid", self._bid, "#1a7f37"),
-      ("Ask", self._ask, "#b42318"),
-      ("Last Trade", self._last, "#175cd3"),
-      ("Quote Time", self._quote_time, "#344054"),
-    ]
-    for idx, (label, var, color) in enumerate(rows):
-      ttk.Label(quote_frame, text=f"{label}:", font=("Helvetica", 12)).grid(
-        row=idx, column=0, sticky=tk.W, pady=10, padx=(0, 20)
-      )
-      ttk.Label(
-        quote_frame,
-        textvariable=var,
-        font=("Helvetica", 20, "bold"),
-        foreground=color,
-      ).grid(row=idx, column=1, sticky=tk.W, pady=10)
+    def _poll(self) -> None:
+        try:
+            while True:
+                kind, data = self._queue.get_nowait()
+                if kind == "quote":
+                    if data.bid_price is not None:
+                        self.bid.set(f"${data.bid_price:.2f}")
+                    if data.ask_price is not None:
+                        self.ask.set(f"${data.ask_price:.2f}")
+                elif kind == "trade" and data.price is not None:
+                    self.last.set(f"${data.price:.2f}")
+                elif kind == "error":
+                    self._status.set(f"Stream error: {data}")
+        except queue.Empty:
+            pass
+        self.after(100, self._poll)
 
-    ttk.Label(
-      self._live_tab,
-      text="Quotes update automatically while subscribed (market hours).",
-      foreground="#667085",
-    ).pack(anchor=tk.W, pady=(12, 0))
-
-  def _build_history_tab(self) -> None:
-    controls = ttk.Frame(self._history_tab)
-    controls.pack(fill=tk.X, pady=(0, 10))
-
-    ttk.Label(controls, text="Ticker:").pack(side=tk.LEFT)
-    ttk.Entry(controls, textvariable=self._history_symbol, width=12).pack(
-      side=tk.LEFT, padx=(6, 10)
-    )
-    ttk.Button(controls, text="Load Chart", command=self._load_history).pack(
-      side=tk.LEFT
-    )
-    ttk.Label(
-      controls,
-      text=f"  ({HISTORY_DAYS} days, {BAR_MINUTES}-minute bars)",
-      foreground="#667085",
-    ).pack(side=tk.LEFT)
-
-    self._chart_container = ttk.Frame(self._history_tab)
-    self._chart_container.pack(fill=tk.BOTH, expand=True)
-
-    self._history_canvas: FigureCanvasTkAgg | None = None
-    self._history_toolbar: NavigationToolbar2Tk | None = None
-
-  def _set_status(self, message: str) -> None:
-    self._status.set(message)
-
-  def _enqueue_quote(self, data) -> None:
-    self._event_queue.put(("quote", data))
-
-  def _enqueue_trade(self, data) -> None:
-    self._event_queue.put(("trade", data))
-
-  def _poll_events(self) -> None:
-    try:
-      while True:
-        event_type, data = self._event_queue.get_nowait()
-        if event_type == "quote":
-          self._update_quote_display(data)
-        elif event_type == "trade":
-          self._update_trade_display(data)
-    except queue.Empty:
-      pass
-    self.after(100, self._poll_events)
-
-  def _update_quote_display(self, quote) -> None:
-    self._bid.set(f"${quote.bid_price:,.2f}" if quote.bid_price else "—")
-    self._ask.set(f"${quote.ask_price:,.2f}" if quote.ask_price else "—")
-    if quote.timestamp:
-      ts = quote.timestamp
-      if hasattr(ts, "strftime"):
-        self._quote_time.set(ts.strftime("%Y-%m-%d %H:%M:%S %Z"))
-      else:
-        self._quote_time.set(str(ts))
-
-  def _update_trade_display(self, trade) -> None:
-    if trade.price:
-      self._last.set(f"${trade.price:,.2f}")
-
-  def _start_stream(self) -> None:
-    symbol = self._live_symbol.get().strip().upper()
-    if not symbol:
-      messagebox.showwarning("Invalid Symbol", "Please enter a ticker symbol.")
-      return
-
-    self._bid.set("—")
-    self._ask.set("—")
-    self._last.set("—")
-    self._quote_time.set("—")
-
-    try:
-      self._streamer.subscribe(symbol)
-      self._set_status(f"Streaming live quotes for {symbol}…")
-    except ValueError as exc:
-      messagebox.showerror("Configuration Error", str(exc))
-    except Exception as exc:
-      messagebox.showerror("Stream Error", str(exc))
-
-  def _stop_stream(self) -> None:
-    self._streamer.stop()
-    self._set_status("Stream stopped.")
-
-  def _load_history(self) -> None:
-    symbol = self._history_symbol.get().strip().upper()
-    if not symbol:
-      messagebox.showwarning("Invalid Symbol", "Please enter a ticker symbol.")
-      return
-
-    self._set_status(f"Loading {HISTORY_DAYS} days of {BAR_MINUTES}m bars for {symbol}…")
-    self.update_idletasks()
-
-    try:
-      df = fetch_historical_bars(symbol, days=HISTORY_DAYS, timeframe_minutes=BAR_MINUTES)
-      if df.empty:
-        messagebox.showinfo("No Data", f"No historical bars returned for {symbol}.")
-        self._set_status("No historical data found.")
-        return
-      self._render_history_chart(symbol, df)
-      self._set_status(
-        f"Loaded {len(df):,} bars for {symbol} ({df.index.min():%Y-%m-%d} → {df.index.max():%Y-%m-%d})"
-      )
-    except ValueError as exc:
-      messagebox.showerror("Configuration Error", str(exc))
-      self._set_status("Failed to load history.")
-    except Exception as exc:
-      messagebox.showerror("Data Error", str(exc))
-      self._set_status("Failed to load history.")
-
-  def _render_history_chart(self, symbol: str, df: pd.DataFrame) -> None:
-    if self._history_canvas is not None:
-      self._history_canvas.get_tk_widget().destroy()
-      self._history_canvas = None
-    if self._history_toolbar is not None:
-      self._history_toolbar.destroy()
-      self._history_toolbar = None
-
-    plot_df = df[["open", "high", "low", "close", "volume"]].copy()
-    plot_df.columns = ["Open", "High", "Low", "Close", "Volume"]
-    plot_df.index.name = "Date"
-
-    fig = mpf.figure(style="yahoo", figsize=(10, 6))
-    ax_ohlc = fig.add_subplot(2, 1, 1)
-    ax_vol = fig.add_subplot(2, 1, 2, sharex=ax_ohlc)
-
-    mpf.plot(
-      plot_df,
-      type="candle",
-      ax=ax_ohlc,
-      volume=ax_vol,
-      style="yahoo",
-      warn_too_much_data=len(plot_df) + 1,
-    )
-    ax_ohlc.set_title(f"{symbol} — {BAR_MINUTES}-Minute OHLCV ({HISTORY_DAYS} Days)")
-    ax_ohlc.set_ylabel("Price ($)")
-    ax_vol.set_ylabel("Volume")
-    ax_vol.xaxis.set_major_formatter(mdates.DateFormatter("%m/%d"))
-    fig.tight_layout()
-
-    self._history_canvas = FigureCanvasTkAgg(fig, master=self._chart_container)
-    self._history_canvas.draw()
-    self._history_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-    self._history_toolbar = NavigationToolbar2Tk(self._history_canvas, self._chart_container)
-    self._history_toolbar.update()
-    self._history_toolbar.pack(fill=tk.X)
-
-  def _on_close(self) -> None:
-    self._streamer.stop()
-    plt.close("all")
-    self.destroy()
+    def _on_close(self) -> None:
+        self._streamer.stop()
+        plt.close("all")
+        self.destroy()
 
 
 def main() -> None:
-  app = MarketDataTerminal()
-  app.mainloop()
-
-
-if __name__ == "__main__":
-  main()
+    MarketDataTerminal().mainloop()
