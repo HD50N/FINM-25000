@@ -7,6 +7,8 @@ from tkinter import messagebox, ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
+import mplfinance as mpf
+
 from data_connector import QuoteStreamer, fetch_historical_bars
 
 
@@ -28,6 +30,8 @@ class MarketDataTerminal(tk.Tk):
             on_trade=lambda t: self._queue.put(("trade", t)),
             on_error=lambda msg: self._queue.put(("error", msg)),
         )
+
+        self._poll_after_id = None
 
         notebook = ttk.Notebook(self)
         notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
@@ -100,15 +104,25 @@ class MarketDataTerminal(tk.Tk):
         if self._canvas:
             self._canvas.get_tk_widget().destroy()
 
-        fig, (ax_price, ax_vol) = plt.subplots(2, 1, figsize=(8, 5), sharex=True)
-        ax_price.plot(df.index, df["open"], label="Open", alpha=0.7)
-        ax_price.plot(df.index, df["high"], label="High", alpha=0.7)
-        ax_price.plot(df.index, df["low"], label="Low", alpha=0.7)
-        ax_price.plot(df.index, df["close"], label="Close")
-        ax_price.set_title(f"{symbol} — 30 days, 5-min OHLCV")
-        ax_price.set_ylabel("Price")
-        ax_price.legend(loc="upper left", fontsize=8)
-        ax_vol.bar(df.index, df["volume"], width=0.003)
+        plot_df = df[["open", "high", "low", "close", "volume"]].copy()
+        plot_df.columns = ["Open", "High", "Low", "Close", "Volume"]
+
+        fig = mpf.figure(style="yahoo", figsize=(8, 5))
+        ax_price = fig.add_subplot(2, 1, 1)
+        ax_vol = fig.add_subplot(2, 1, 2, sharex=ax_price)
+
+        mpf.plot(
+            plot_df,
+            type="candle",
+            ax=ax_price,
+            volume=ax_vol,
+            style="yahoo",
+            warn_too_much_data=len(plot_df) + 1,
+            datetime_format="%b %d",
+        )
+
+        ax_price.set_title(f"{symbol} — 30 Trading Days, 5-Minute OHLCV")
+        ax_price.set_ylabel("Price ($)")
         ax_vol.set_ylabel("Volume")
         fig.tight_layout()
 
@@ -131,9 +145,16 @@ class MarketDataTerminal(tk.Tk):
                     self._status.set(f"Stream error: {data}")
         except queue.Empty:
             pass
-        self.after(100, self._poll)
+        self._poll_after_id = self.after(100, self._poll)
 
     def _on_close(self) -> None:
+        if self._poll_after_id is not None:
+            try:
+                self.after_cancel(self._poll_after_id)
+            except tk.TclError:
+                pass
+            self._poll_after_id = None
+
         self._streamer.stop()
         plt.close("all")
         self.destroy()
