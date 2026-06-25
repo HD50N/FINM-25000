@@ -2,6 +2,8 @@
 
 FINM-25000 assignment: connect to Alpaca, download historical OHLCV data, stream live bid/ask quotes, and display in a Tkinter UI.
 
+Acknowledgements: with the permission of the professor, AI was used to assist with the assignment, help debug the code, and provide conceptual explanations.
+
 ## Setup
 
 ```bash
