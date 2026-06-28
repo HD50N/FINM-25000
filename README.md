@@ -28,5 +28,3 @@ python run_backtest.py --symbol AAPL
 ```
 
 Downloads 5 years of daily OHLCV from Alpaca, runs 3 strategies plus buy & hold, saves charts to `charts/`, and prints the metrics table for your report.
-
-Write the final report manually (Word/Google Docs → PDF) and save it as `reports/backtest_report.pdf`.
