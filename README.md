@@ -21,8 +21,12 @@ Get paper API keys from https://app.alpaca.markets/paper/dashboard/overview
 - **Live Quotes tab** — enter a ticker, click Subscribe, see bid/ask/last trade update automatically
 - **Historical Chart tab** — enter a ticker, click Load Chart, see 30 days of 5-minute OHLCV
 
-## Submission checklist
+## Backtesting (Part 2)
 
-- [ ] Code pushed to GitHub
-- [ ] Screenshot saved to `screenshots/ui_screenshot.png`
-- [ ] 2–5 minute demo video recorded
+```bash
+python run_backtest.py --symbol AAPL
+```
+
+Downloads 5 years of daily OHLCV from Alpaca, runs 3 strategies plus buy & hold, saves charts to `charts/`, and prints the metrics table for your report.
+
+Write the final report manually (Word/Google Docs → PDF) and save it as `reports/backtest_report.pdf`.

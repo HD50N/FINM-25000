@@ -1,5 +1,6 @@
 alpaca-py
 python-dotenv
 pandas
+numpy
 matplotlib
 mplfinance
