@@ -23,8 +23,10 @@ Get paper API keys from https://app.alpaca.markets/paper/dashboard/overview
 
 ## Backtesting (Part 2)
 
+- **Backtesting tab** — enter a ticker, click Run Backtest, view charts and metrics in the UI
+
+To print metrics in the terminal (for your report):
+
 ```bash
 python run_backtest.py --symbol AAPL
 ```
-
-Downloads 5 years of daily OHLCV from Alpaca, runs 3 strategies plus buy & hold, saves charts to `charts/`, and prints the metrics table for your report.

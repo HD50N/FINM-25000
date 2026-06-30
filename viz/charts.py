@@ -1,13 +1,11 @@
 """Assignment-required charts."""
 
-from pathlib import Path
-
 import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def plot_price_chart(df: pd.DataFrame, signals: pd.Series, symbol: str, path: Path) -> None:
-    fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
+def make_price_chart(df: pd.DataFrame, signals: pd.Series, symbol: str) -> plt.Figure:
+    fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True)
 
     axes[0].plot(df.index, df["close"], label="Close", color="black", linewidth=1)
     axes[0].plot(df.index, df["sma_20"], label="SMA 20", alpha=0.7)
@@ -33,29 +31,26 @@ def plot_price_chart(df: pd.DataFrame, signals: pd.Series, symbol: str, path: Pa
     axes[2].grid(True, alpha=0.3)
 
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    return fig
 
 
-def plot_equity_curve(equity_curves: dict[str, pd.Series], path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(12, 6))
+def make_equity_curve(equity_curves: dict[str, pd.Series]) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10, 5))
     for name, equity in equity_curves.items():
         ax.plot(equity.index, equity, label=name)
     ax.set_title("Equity Curve Comparison")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    return fig
 
 
-def plot_drawdown(drawdowns: dict[str, pd.Series], path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(12, 6))
+def make_drawdown(drawdowns: dict[str, pd.Series]) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10, 5))
     for name, dd in drawdowns.items():
         ax.plot(dd.index, dd * 100, label=name)
     ax.set_title("Drawdown Comparison (%)")
     ax.legend()
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
-    fig.savefig(path, dpi=150)
-    plt.close(fig)
+    return fig

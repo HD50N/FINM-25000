@@ -9,7 +9,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 import mplfinance as mpf
 
+from backtest.runner import run_all
 from data_connector import QuoteStreamer, fetch_historical_bars
+from viz.charts import make_drawdown, make_equity_curve, make_price_chart
 
 
 class MarketDataTerminal(tk.Tk):
@@ -38,11 +40,14 @@ class MarketDataTerminal(tk.Tk):
 
         live = ttk.Frame(notebook, padding=10)
         history = ttk.Frame(notebook, padding=10)
+        backtest = ttk.Frame(notebook, padding=10)
         notebook.add(live, text="Live Quotes")
         notebook.add(history, text="Historical Chart")
+        notebook.add(backtest, text="Backtesting")
 
         self._build_live_tab(live)
         self._build_history_tab(history)
+        self._build_backtest_tab(backtest)
         self._poll()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -69,6 +74,28 @@ class MarketDataTerminal(tk.Tk):
         self._chart_frame = ttk.Frame(parent)
         self._chart_frame.pack(fill=tk.BOTH, expand=True, pady=10)
         self._canvas = None
+
+    def _build_backtest_tab(self, parent: ttk.Frame) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X)
+        ttk.Label(row, text="Ticker:").pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=self.symbol, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(row, text="Run Backtest", command=self._run_backtest).pack(side=tk.LEFT)
+
+        self._metrics_text = tk.Text(parent, height=8, wrap=tk.NONE)
+        self._metrics_text.pack(fill=tk.X, pady=(10, 0))
+        self._metrics_text.configure(state=tk.DISABLED)
+
+        self._backtest_charts = ttk.Notebook(parent)
+        self._backtest_charts.pack(fill=tk.BOTH, expand=True, pady=10)
+        self._backtest_chart_frames = {
+            "Price Chart": ttk.Frame(self._backtest_charts),
+            "Equity Curve": ttk.Frame(self._backtest_charts),
+            "Drawdown": ttk.Frame(self._backtest_charts),
+        }
+        for title, frame in self._backtest_chart_frames.items():
+            self._backtest_charts.add(frame, text=title)
+        self._backtest_canvases: dict[str, FigureCanvasTkAgg] = {}
 
     def _subscribe(self) -> None:
         symbol = self.symbol.get().strip().upper()
@@ -129,6 +156,41 @@ class MarketDataTerminal(tk.Tk):
         self._canvas = FigureCanvasTkAgg(fig, master=self._chart_frame)
         self._canvas.draw()
         self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def _run_backtest(self) -> None:
+        symbol = self.symbol.get().strip().upper()
+        if not symbol:
+            messagebox.showwarning("Error", "Enter a ticker.")
+            return
+        try:
+            data = run_all(symbol)
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+
+        self._metrics_text.configure(state=tk.NORMAL)
+        self._metrics_text.delete("1.0", tk.END)
+        self._metrics_text.insert(tk.END, data["metrics_table"].to_string())
+        self._metrics_text.configure(state=tk.DISABLED)
+
+        df = data["df"]
+        signals = data["strategy_map"]["Trend Following"]
+        equity_curves = {name: r["equity_curve"] for name, r in data["results"].items()}
+        drawdowns = {name: m["drawdown"] for name, m in data["metrics"].items()}
+
+        figures = {
+            "Price Chart": make_price_chart(df, signals, symbol),
+            "Equity Curve": make_equity_curve(equity_curves),
+            "Drawdown": make_drawdown(drawdowns),
+        }
+
+        for title, fig in figures.items():
+            if title in self._backtest_canvases:
+                self._backtest_canvases[title].get_tk_widget().destroy()
+            canvas = FigureCanvasTkAgg(fig, master=self._backtest_chart_frames[title])
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            self._backtest_canvases[title] = canvas
 
     def _poll(self) -> None:
         try:
