@@ -1,8 +1,14 @@
 """Print backtest metrics (charts are shown in the UI)."""
 
 import argparse
+import sys
+from pathlib import Path
 
-from backtest.runner import run_all
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from hw2.backtest.runner import run_all
 
 
 def main() -> None:

@@ -9,9 +9,9 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 import mplfinance as mpf
 
-from backtest.runner import run_all
-from data_connector import QuoteStreamer, fetch_historical_bars
-from viz.charts import make_drawdown, make_equity_curve, make_price_chart
+from hw1.data_connector import QuoteStreamer, fetch_historical_bars
+from hw2.backtest.runner import run_all
+from hw2.viz.charts import make_drawdown, make_equity_curve, make_price_chart
 
 
 class MarketDataTerminal(tk.Tk):

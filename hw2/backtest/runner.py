@@ -2,13 +2,13 @@
 
 import pandas as pd
 
-from backtest.engine import run_backtest
-from backtest.metrics import compute_metrics
-from data_connector.historical import fetch_daily_bars
-from indicators.technical import add_indicators
-from strategies.custom import generate_signals as custom_signals
-from strategies.mean_reversion import generate_signals as mean_reversion_signals
-from strategies.trend_following import generate_signals as trend_signals
+from hw2.backtest.engine import run_backtest
+from hw2.backtest.metrics import compute_metrics
+from hw2.data_connector.historical import fetch_daily_bars
+from hw2.indicators.technical import add_indicators
+from hw2.strategies.custom import generate_signals as custom_signals
+from hw2.strategies.mean_reversion import generate_signals as mean_reversion_signals
+from hw2.strategies.trend_following import generate_signals as trend_signals
 
 INITIAL_CAPITAL = 100_000
 
