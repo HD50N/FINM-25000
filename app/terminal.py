@@ -8,10 +8,17 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 import mplfinance as mpf
+import pandas as pd
 
 from hw1.data_connector import QuoteStreamer, fetch_historical_bars
 from hw2.backtest.runner import run_all
 from hw2.viz.charts import make_drawdown, make_equity_curve, make_price_chart
+from hw3.backtest.runner import train_ml_pipeline
+from hw3.viz.charts import (
+    make_drawdown_chart,
+    make_equity_curve_chart,
+    make_pca_variance_chart,
+)
 
 
 class MarketDataTerminal(tk.Tk):
@@ -41,13 +48,16 @@ class MarketDataTerminal(tk.Tk):
         live = ttk.Frame(notebook, padding=10)
         history = ttk.Frame(notebook, padding=10)
         backtest = ttk.Frame(notebook, padding=10)
+        ml_backtest = ttk.Frame(notebook, padding=10)
         notebook.add(live, text="Live Quotes")
         notebook.add(history, text="Historical Chart")
         notebook.add(backtest, text="Backtesting")
+        notebook.add(ml_backtest, text="ML Backtest")
 
         self._build_live_tab(live)
         self._build_history_tab(history)
         self._build_backtest_tab(backtest)
+        self._build_ml_backtest_tab(ml_backtest)
         self._poll()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -96,6 +106,28 @@ class MarketDataTerminal(tk.Tk):
         for title, frame in self._backtest_chart_frames.items():
             self._backtest_charts.add(frame, text=title)
         self._backtest_canvases: dict[str, FigureCanvasTkAgg] = {}
+
+    def _build_ml_backtest_tab(self, parent: ttk.Frame) -> None:
+        row = ttk.Frame(parent)
+        row.pack(fill=tk.X)
+        ttk.Label(row, text="Ticker:").pack(side=tk.LEFT)
+        ttk.Entry(row, textvariable=self.symbol, width=10).pack(side=tk.LEFT, padx=5)
+        ttk.Button(row, text="Run ML Backtest", command=self._run_ml_backtest).pack(side=tk.LEFT)
+
+        self._ml_metrics_text = tk.Text(parent, height=8, wrap=tk.NONE)
+        self._ml_metrics_text.pack(fill=tk.X, pady=(10, 0))
+        self._ml_metrics_text.configure(state=tk.DISABLED)
+
+        self._ml_backtest_charts = ttk.Notebook(parent)
+        self._ml_backtest_charts.pack(fill=tk.BOTH, expand=True, pady=10)
+        self._ml_backtest_chart_frames = {
+            "Equity Curve": ttk.Frame(self._ml_backtest_charts),
+            "Drawdown": ttk.Frame(self._ml_backtest_charts),
+            "PCA Variance": ttk.Frame(self._ml_backtest_charts),
+        }
+        for title, frame in self._ml_backtest_chart_frames.items():
+            self._ml_backtest_charts.add(frame, text=title)
+        self._ml_backtest_canvases: dict[str, FigureCanvasTkAgg] = {}
 
     def _subscribe(self) -> None:
         symbol = self.symbol.get().strip().upper()
@@ -191,6 +223,55 @@ class MarketDataTerminal(tk.Tk):
             canvas.draw()
             canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
             self._backtest_canvases[title] = canvas
+
+    def _run_ml_backtest(self) -> None:
+        symbol = self.symbol.get().strip().upper()
+        if not symbol:
+            messagebox.showwarning("Error", "Enter a ticker.")
+            return
+        try:
+            results = train_ml_pipeline(symbol)
+        except Exception as exc:
+            messagebox.showerror("Error", str(exc))
+            return
+
+        component_count = results["pca_bundle"]["component_count"]
+        metrics_output = (
+            f"PCA components kept: {component_count}\n\n"
+            f"{results['metrics_table'].to_string()}"
+        )
+
+        self._ml_metrics_text.configure(state=tk.NORMAL)
+        self._ml_metrics_text.delete("1.0", tk.END)
+        self._ml_metrics_text.insert(tk.END, metrics_output)
+        self._ml_metrics_text.configure(state=tk.DISABLED)
+
+        figures = {
+            "Equity Curve": make_equity_curve_chart(
+                {
+                    "Buy & Hold": results["buy_and_hold_result"]["equity_curve"],
+                    "ML Signal": results["machine_learning_result"]["equity_curve"],
+                }
+            ),
+            "Drawdown": make_drawdown_chart(
+                {
+                    "Buy & Hold": results["buy_and_hold_metrics"]["drawdown"],
+                    "ML Signal": results["machine_learning_metrics"]["drawdown"],
+                }
+            ),
+            "PCA Variance": make_pca_variance_chart(
+                pd.Series(results["pca_bundle"]["explained_variance_ratio"]),
+                pd.Series(results["pca_bundle"]["cumulative_variance_ratio"]),
+            ),
+        }
+
+        for title, figure in figures.items():
+            if title in self._ml_backtest_canvases:
+                self._ml_backtest_canvases[title].get_tk_widget().destroy()
+            canvas = FigureCanvasTkAgg(figure, master=self._ml_backtest_chart_frames[title])
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+            self._ml_backtest_canvases[title] = canvas
 
     def _poll(self) -> None:
         try:
