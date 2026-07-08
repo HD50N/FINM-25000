@@ -66,11 +66,11 @@ def main() -> None:
 
     if latest_signal == 1 and open_share_count == 0:
         account = trading_client.get_account()
-        buying_power = float(account.buying_power)
+        cash = float(account.cash)
         latest_price = pipeline["latest_close_price"]
-        share_quantity = int(buying_power // latest_price)
+        share_quantity = int((cash * 0.95) // latest_price)
         if share_quantity <= 0:
-            write_log_line(log_path, "No buying power available for a buy order.")
+            write_log_line(log_path, "No cash available for a buy order.")
             return
 
         buy_order = MarketOrderRequest(
