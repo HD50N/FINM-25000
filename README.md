@@ -9,6 +9,7 @@ Acknowledgements: with the permission of the professor, AI was used to assist wi
 ├── hw1/          # HW1 source code
 ├── hw2/          # HW2 source code
 ├── hw3/          # HW3 source code
+├── project/      # Final project: systematic trading system
 ├── main.py       # Run the UI
 ├── requirements.txt
 └── .env          # Alpaca API keys (shared)
@@ -37,6 +38,8 @@ python main.py
 | Historical Chart | HW1 | 30 days of 5-minute OHLCV |
 | Backtesting | HW2 | Run 3 strategies, view charts and metrics |
 | ML Backtest | HW3 | Run ML pipeline, view charts and metrics |
+| Paper Trading | Final Project | Start/stop the live trading engine, monitor positions, P&L, orders |
+| Project Backtest | Final Project | Backtest the project strategy over the universe |
 
 ---
 
@@ -125,3 +128,115 @@ Charts are saved to `hw3/charts/`.
 python hw3/paper_trade.py --symbol AAPL
 ```
 
+
+---
+
+## Final Project — Alpaca Systematic Trading System (Paper Trading Only)
+
+An end-to-end systematic trading system: a live data pipeline pulls quotes from
+Alpaca, a trend-following strategy generates signals, a risk module sizes and
+limits positions, and a trading engine turns targets into paper orders. The
+Tkinter UI monitors and controls the whole system.
+
+**Paper trading only — no real money is ever used** (`TradingClient(..., paper=True)`).
+
+This section is the overview; **[`project/README.md`](project/README.md)** has
+the full documentation — the assignment-requirement mapping, every design
+decision with its justification, configuration reference, and example results
+— and each subpackage (`data_connector/`, `strategies/`, `risk/`,
+`execution/`, `engine/`, `backtest/`, `ui/`, `tests/`) has its own README
+with module-level detail.
+
+### Architecture
+
+```
+                  ┌────────────────────────────────────────────┐
+                  │        app/terminal.py (Tkinter UI)        │
+                  │  Paper Trading tab      Project Backtest   │
+                  └───────────┬───────────────────┬────────────┘
+                              │ start/stop         │ run
+                              ▼                    ▼
+                  ┌───────────────────┐  ┌───────────────────┐
+                  │ engine/           │  │ backtest/         │
+                  │ LiveTradingEngine │  │ engine + metrics  │
+                  └──┬──────┬──────┬──┘  └───────┬───────────┘
+                     │      │      │             │
+        ┌────────────┘      │      └──────────┐  │
+        ▼                   ▼                 ▼  ▼
+┌───────────────┐  ┌───────────────┐  ┌────────────────────────┐
+│ data_connector│  │ risk/limits   │  │ strategies/momentum    │
+│ quotes + bars │  │ sizing, stops │  │ SMA crossover signals  │
+└───────┬───────┘  └───────────────┘  └────────────────────────┘
+        │                  ▲
+        ▼                  │ orders
+┌───────────────┐  ┌───────┴───────┐
+│  Alpaca data  │  │ execution/    │
+│  API (IEX)    │  │ AlpacaBroker  │──► Alpaca paper trading API
+└───────────────┘  └───────────────┘
+```
+
+Each live cycle (every 60s): fetch latest quotes for the universe (logged to
+`project/logs/quotes_YYYYMMDD.csv`) and daily bars → compute signals → apply
+stop-losses and the daily loss halt → size target positions → submit market
+orders for the difference between target and current holdings → update the UI
+snapshot (positions, P&L, orders, events). All events are also appended to
+`project/logs/engine.log`.
+
+### Source code
+
+- `project/config.py` — universe, strategy parameters, risk limits
+- `project/data_connector/` — latest quotes (with CSV logging) and daily bars for the universe
+- `project/strategies/` — trend-following SMA crossover signals
+- `project/risk/` — position sizing, stop-losses, daily loss halt
+- `project/execution/` — Alpaca paper order routing and order status
+- `project/engine/` — live trading loop (data → signals → risk → orders)
+- `project/backtest/` — portfolio backtest engine, metrics, runner
+- `project/viz/` — equity curve, drawdown, exposure charts
+- `project/ui/` — Paper Trading and Project Backtest tabs
+- `project/tests/` — strategy and risk unit tests (no network)
+
+### Strategy
+
+Trend-following moving average crossover on a 10-stock universe: hold a stock
+while its 20-day SMA is above its 50-day SMA, otherwise stay in cash. Signals
+are shifted one bar so a crossover observed at today's close is traded
+tomorrow (no look-ahead). The intuition: prices trend because information
+diffuses gradually and investors herd, so recent strength tends to persist.
+
+### Risk controls
+
+- Long-only, no leverage, no shorts
+- Max 15% of equity per asset (`MAX_POSITION_FRACTION`)
+- Max 95% of equity invested in total (`MAX_GROSS_EXPOSURE`)
+- 5% stop-loss from entry price per position (`STOP_LOSS_FRACTION`)
+- 3% daily loss limit: the engine liquidates and halts for the day (`MAX_DAILY_LOSS_FRACTION`)
+
+All limits live in `project/config.py`. The backtest reuses the same
+`risk/limits.py` sizing code as live trading.
+
+### Run
+
+```bash
+python main.py                    # UI: use the Paper Trading / Project Backtest tabs
+python project/run_live.py        # headless paper trading loop (Ctrl-C to stop)
+python project/run_backtest.py    # backtest: prints metrics, saves charts to project/charts/
+python -m pytest project/tests    # unit tests
+```
+
+### Modes
+
+- **Backtest** — 5 years of daily bars, daily-rebalanced portfolio vs. an
+  equal-weight buy-and-hold benchmark (return, CAGR, volatility, Sharpe, max
+  drawdown, trade count, win rate).
+- **Paper trading** — live loop against the Alpaca paper account. The UI shows
+  system status (running/stopped, connected/disconnected, halted), positions,
+  cumulative P&L, trade count, hit rate, and an event log.
+
+### Limitations and possible improvements
+
+- Market orders only; limit orders would reduce slippage on rebalances.
+- Signals use daily bars, so intraday moves only matter through the stop-loss.
+- The backtest ignores commissions and slippage (Alpaca is commission-free,
+  but fills are idealized at the close).
+- Possible next steps: volatility-scaled position sizing, a short leg,
+  persistent trade database, and richer order-state tracking (partial fills).

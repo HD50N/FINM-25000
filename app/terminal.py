@@ -19,6 +19,7 @@ from hw3.viz.charts import (
     make_equity_curve_chart,
     make_pca_variance_chart,
 )
+from project.ui.dashboard import PaperTradingFrame, ProjectBacktestFrame
 
 
 class MarketDataTerminal(tk.Tk):
@@ -49,10 +50,15 @@ class MarketDataTerminal(tk.Tk):
         history = ttk.Frame(notebook, padding=10)
         backtest = ttk.Frame(notebook, padding=10)
         ml_backtest = ttk.Frame(notebook, padding=10)
+        paper_trading = PaperTradingFrame(notebook)
+        project_backtest = ProjectBacktestFrame(notebook)
         notebook.add(live, text="Live Quotes")
         notebook.add(history, text="Historical Chart")
         notebook.add(backtest, text="Backtesting")
         notebook.add(ml_backtest, text="ML Backtest")
+        notebook.add(paper_trading, text="Paper Trading")
+        notebook.add(project_backtest, text="Project Backtest")
+        self._paper_trading = paper_trading
 
         self._build_live_tab(live)
         self._build_history_tab(history)
@@ -298,6 +304,7 @@ class MarketDataTerminal(tk.Tk):
                 pass
             self._poll_after_id = None
 
+        self._paper_trading.shutdown()
         self._streamer.stop()
         plt.close("all")
         self.destroy()
