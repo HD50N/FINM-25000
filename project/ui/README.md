@@ -11,13 +11,16 @@ orders, and system status; provide start/stop control and a backtest mode.
 - **Status line** — Running / Stopped / Halted, connected / disconnected,
   mode (`paper`), the configured universe, and the cycle interval
   (assignment: "system status (connected/disconnected, mode)").
-- **Account line** — equity, cash, cumulative P&L since engine start, trade
-  count, hit rate (assignment: "positions and P&L", "performance metrics").
+- **Account line** — equity, cash, cumulative P&L since engine start,
+  current drawdown from peak equity, trade count, hit rate (assignment:
+  "positions and P&L", "performance metrics").
 - **Positions table** — one row per universe symbol: current signal
   (Long/Flat), quantity, average entry, market value, unrealized P&L.
-- **Event feed** — the engine's timestamped log: cycles, signals, orders
-  with statuses, risk halts, errors (assignment: "recent signals and
-  orders").
+- **Recent orders table** — order id, side, qty, filled qty, and status
+  (`filled` / `partially_filled` / `canceled` / …).
+- **Event feed** — the engine's timestamped log: submitted → filled /
+  canceled transitions, position qty fill confirmations, risk halts,
+  errors (assignment: "recent signals and orders").
 
 The frame polls `engine.get_snapshot()` once per second with Tk's `after()`.
 The engine never touches widgets — all UI mutation happens on the Tk main

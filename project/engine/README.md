@@ -15,7 +15,8 @@ sequences the other modules.
   delayed by up to a full cycle).
 - `get_snapshot()` — returns a copy of the current state: running /
   connected / halted flags, mode ("paper"), equity, cash, cumulative P&L,
-  trade count, hit rate, positions, signals, recent orders, recent events.
+  drawdown from peak equity, trade count, hit rate, positions, signals,
+  recent orders, recent events.
 
 ## One cycle, in order
 
@@ -29,7 +30,11 @@ sequences the other modules.
    otherwise `apply_stop_losses`.
 5. `size_positions` into dollar targets; diff target share counts against
    actual Alpaca positions; submit market orders only for the differences.
-6. Update trade statistics (count, closed-trade hit rate) and the snapshot.
+6. Poll each order until filled / partially_filled / canceled (or timeout)
+   and log that transition; then log any position qty changes as
+   "Fill confirmed".
+7. Update trade statistics (count, closed-trade hit rate, drawdown) and
+   the snapshot.
 
 ## Design notes and justification
 

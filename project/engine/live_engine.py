@@ -8,6 +8,8 @@ Runs one cycle every CYCLE_SECONDS in a background thread. Each cycle:
 3. Apply risk checks: stop-losses and the daily loss halt.
 4. Size target positions and submit market orders for the difference
    between target and current holdings.
+5. Poll each order until filled / partially_filled / canceled (or timeout)
+   and log the final state; also log position qty changes as fills.
 """
 
 import threading
@@ -44,8 +46,10 @@ class LiveTradingEngine:
         self._risk_state: RiskState | None = None
         self._risk_day: date | None = None
         self._initial_equity: float | None = None
+        self._peak_equity: float | None = None
         self._trade_count = 0
         self._closed_trades: list[float] = []
+        self._previous_qtys: dict[str, float] = {}
 
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -58,6 +62,7 @@ class LiveTradingEngine:
             "equity": None,
             "cash": None,
             "cumulative_pnl": None,
+            "drawdown": None,
             "trade_count": 0,
             "hit_rate": None,
             "positions": {},
@@ -101,8 +106,19 @@ class LiveTradingEngine:
             self._broker = AlpacaBroker()
             equity, cash = self._broker.get_equity_and_cash()
             self._initial_equity = equity
+            self._peak_equity = equity
+            self._previous_qtys = {
+                symbol: pos["qty"] for symbol, pos in self._broker.get_positions().items()
+            }
             self._reset_risk_state(equity)
-            self._update_snapshot(running=True, connected=True, equity=equity, cash=cash)
+            self._update_snapshot(
+                running=True,
+                connected=True,
+                equity=equity,
+                cash=cash,
+                cumulative_pnl=0.0,
+                drawdown=0.0,
+            )
             self._log_event(f"Engine started. Universe: {', '.join(self._universe)}")
             self._log_event("Paper trading only — no real money is used.")
         except Exception as exc:
@@ -156,10 +172,20 @@ class LiveTradingEngine:
         else:
             signals = apply_stop_losses(signals, prices, self._risk_state)
 
-        positions = self._broker.get_positions()
+        positions_before = self._broker.get_positions()
         targets = size_positions(signals, equity)
-        orders = self._rebalance(targets, positions, prices)
+        orders = self._rebalance(targets, positions_before, prices)
 
+        positions_after = self._broker.get_positions()
+        self._log_position_fills(positions_before, positions_after)
+
+        if self._peak_equity is None or equity > self._peak_equity:
+            self._peak_equity = equity
+        drawdown = (
+            (equity / self._peak_equity) - 1.0
+            if self._peak_equity and self._peak_equity > 0
+            else 0.0
+        )
         cumulative_pnl = equity - self._initial_equity if self._initial_equity else None
         hit_rate = (
             sum(1 for pnl in self._closed_trades if pnl > 0) / len(self._closed_trades)
@@ -173,9 +199,10 @@ class LiveTradingEngine:
             equity=equity,
             cash=cash,
             cumulative_pnl=cumulative_pnl,
+            drawdown=drawdown,
             trade_count=self._trade_count,
             hit_rate=hit_rate,
-            positions=positions,
+            positions=positions_after,
             signals=signals,
             orders=orders,
         )
@@ -188,6 +215,18 @@ class LiveTradingEngine:
     ) -> list[dict]:
         """Submit market orders to move current holdings toward targets."""
         orders = []
+        try:
+            open_orders = self._broker.get_open_orders()
+        except Exception as exc:
+            self._log_event(f"Failed to fetch open orders: {exc}")
+            open_orders = []
+
+        open_by_symbol: dict[str, dict] = {}
+        for open_order in open_orders:
+            # Keep the first open order per symbol; skip new submits until it settles.
+            open_by_symbol.setdefault(open_order["symbol"], open_order)
+            orders.append(open_order)
+
         for symbol, target_notional in targets.items():
             price = prices.get(symbol)
             if price is None or price <= 0:
@@ -198,6 +237,15 @@ class LiveTradingEngine:
 
             if delta_qty == 0:
                 continue
+
+            if symbol in open_by_symbol:
+                pending = open_by_symbol[symbol]
+                self._log_event(
+                    f"Skipping {symbol}: open order still {pending['status']} "
+                    f"(id: {pending['id'][:8]}…, filled: {pending.get('filled_qty', 0):g})"
+                )
+                continue
+
             side = "buy" if delta_qty > 0 else "sell"
             try:
                 order = self._broker.submit_market_order(symbol, abs(delta_qty), side)
@@ -205,21 +253,84 @@ class LiveTradingEngine:
                 self._log_event(f"Order rejected for {symbol}: {exc}")
                 continue
 
-            orders.append(order)
-            self._trade_count += 1
             self._log_event(
-                f"PAPER {side.upper()} {abs(delta_qty)} {symbol} @ ~${price:.2f} "
-                f"(status: {order['status']})"
+                f"Order submitted: {side.upper()} {abs(delta_qty)} {symbol} "
+                f"@ ~${price:.2f} (status: {order['status']}, id: {order['id'][:8]}…)"
             )
 
-            if side == "buy":
+            try:
+                order = self._broker.wait_for_order_update(order["id"])
+            except Exception as exc:
+                self._log_event(f"Order status poll failed for {symbol}: {exc}")
+
+            self._log_order_status(order, side=side, requested_qty=abs(delta_qty))
+            orders.append(order)
+            self._trade_count += 1
+
+            filled_qty = order.get("filled_qty", 0.0)
+            if side == "buy" and filled_qty > 0:
                 self._risk_state.entry_prices[symbol] = price
-            else:
-                entry_price = self._risk_state.entry_prices.pop(symbol, None)
+            elif side == "sell" and filled_qty > 0:
+                entry_price = self._risk_state.entry_prices.get(symbol)
+                # Full exit when target is flat (or position gone after fill).
                 if entry_price and target_qty == 0:
                     self._closed_trades.append(price - entry_price)
+                    self._risk_state.entry_prices.pop(symbol, None)
 
         return orders
+
+    def _log_order_status(self, order: dict, side: str, requested_qty: int) -> None:
+        status = order["status"]
+        filled_qty = order.get("filled_qty", 0.0)
+        symbol = order["symbol"]
+        if status == "filled":
+            self._log_event(
+                f"Order filled: {side.upper()} {filled_qty:g} {symbol} "
+                f"(requested {requested_qty})"
+            )
+        elif status == "partially_filled":
+            self._log_event(
+                f"Order partially filled: {side.upper()} {filled_qty:g}/{requested_qty} "
+                f"{symbol} (status: {status})"
+            )
+        elif status in {"canceled", "cancelled"}:
+            self._log_event(
+                f"Order canceled: {side.upper()} {requested_qty} {symbol} "
+                f"(filled {filled_qty:g} before cancel)"
+            )
+        elif status == "accepted":
+            # Common outside regular market hours — Alpaca queues until the next session.
+            self._log_event(
+                f"Order accepted (queued until market open): {side.upper()} "
+                f"{requested_qty} {symbol} (filled: {filled_qty:g})"
+            )
+        else:
+            self._log_event(
+                f"Order update: {side.upper()} {requested_qty} {symbol} "
+                f"(status: {status}, filled: {filled_qty:g})"
+            )
+
+    def _log_position_fills(
+        self,
+        before: dict[str, dict],
+        after: dict[str, dict],
+    ) -> None:
+        """Log when position quantities change (visible fill confirmation for the UI)."""
+        symbols = set(before) | set(after) | set(self._previous_qtys)
+        for symbol in sorted(symbols):
+            old_qty = before.get(symbol, {}).get("qty", self._previous_qtys.get(symbol, 0.0))
+            new_qty = after.get(symbol, {}).get("qty", 0.0)
+            if abs(new_qty - old_qty) < 1e-9:
+                continue
+            delta = new_qty - old_qty
+            direction = "bought" if delta > 0 else "sold"
+            self._log_event(
+                f"Fill confirmed: {direction} {abs(delta):g} {symbol} "
+                f"(qty {old_qty:g} → {new_qty:g})"
+            )
+            self._previous_qtys[symbol] = new_qty
+            if new_qty == 0:
+                self._previous_qtys.pop(symbol, None)
 
     def _log_event(self, message: str) -> None:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

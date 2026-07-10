@@ -42,7 +42,9 @@ class PaperTradingFrame(ttk.Frame):
             anchor=tk.W, pady=(8, 0)
         )
 
-        self._account = tk.StringVar(value="Equity: — | Cash: — | P&L: — | Trades: —")
+        self._account = tk.StringVar(
+            value="Equity: — | Cash: — | P&L: — | Drawdown: — | Trades: —"
+        )
         ttk.Label(self, textvariable=self._account, font=("Helvetica", 14)).pack(
             anchor=tk.W, pady=(4, 8)
         )
@@ -64,6 +66,29 @@ class PaperTradingFrame(ttk.Frame):
             self._positions_tree.column(column, width=100, anchor=tk.E)
         self._positions_tree.column("symbol", anchor=tk.W)
         self._positions_tree.pack(fill=tk.X)
+
+        ttk.Label(self, text="Recent orders (submitted → filled / partial / canceled):").pack(
+            anchor=tk.W, pady=(8, 0)
+        )
+        order_columns = ("id", "side", "qty", "symbol", "filled", "status")
+        self._orders_tree = ttk.Treeview(
+            self, columns=order_columns, show="headings", height=5
+        )
+        order_headings = {
+            "id": "Order ID",
+            "side": "Side",
+            "qty": "Qty",
+            "symbol": "Symbol",
+            "filled": "Filled",
+            "status": "Status",
+        }
+        for column, heading in order_headings.items():
+            self._orders_tree.heading(column, text=heading)
+            self._orders_tree.column(column, width=90, anchor=tk.E)
+        self._orders_tree.column("id", width=120, anchor=tk.W)
+        self._orders_tree.column("symbol", anchor=tk.W)
+        self._orders_tree.column("status", width=120, anchor=tk.W)
+        self._orders_tree.pack(fill=tk.X)
 
         ttk.Label(self, text="Events (signals, orders, fills, errors):").pack(
             anchor=tk.W, pady=(8, 0)
@@ -99,11 +124,13 @@ class PaperTradingFrame(ttk.Frame):
         equity = snapshot["equity"]
         cash = snapshot["cash"]
         pnl = snapshot["cumulative_pnl"]
+        drawdown = snapshot.get("drawdown")
         hit_rate = snapshot["hit_rate"]
         self._account.set(
             f"Equity: {f'${equity:,.2f}' if equity is not None else '—'} | "
             f"Cash: {f'${cash:,.2f}' if cash is not None else '—'} | "
             f"P&L: {f'${pnl:,.2f}' if pnl is not None else '—'} | "
+            f"Drawdown: {f'{drawdown * 100:.2f}%' if drawdown is not None else '—'} | "
             f"Trades: {snapshot['trade_count']} | "
             f"Hit rate: {f'{hit_rate * 100:.0f}%' if hit_rate is not None else '—'}"
         )
@@ -122,6 +149,21 @@ class PaperTradingFrame(ttk.Frame):
                     f"${position['avg_entry_price']:.2f}" if position else "—",
                     f"${position['market_value']:,.2f}" if position else "—",
                     f"${position['unrealized_pl']:,.2f}" if position else "—",
+                ),
+            )
+
+        self._orders_tree.delete(*self._orders_tree.get_children())
+        for order in reversed(snapshot.get("orders", [])[-20:]):
+            self._orders_tree.insert(
+                "",
+                tk.END,
+                values=(
+                    order.get("id", "")[:8],
+                    str(order.get("side", "")).upper(),
+                    order.get("qty", "—"),
+                    order.get("symbol", "—"),
+                    f"{order.get('filled_qty', 0):g}",
+                    order.get("status", "—"),
                 ),
             )
 

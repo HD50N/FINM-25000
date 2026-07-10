@@ -40,11 +40,11 @@ it. Each subpackage has its own README with module-level detail:
 | Secure API key handling | Keys come from `.env` via `hw1/data_connector/config.py`; `.env` is gitignored, `.env.example` has placeholders |
 | Structured data storage | pandas DataFrames in memory; quotes appended to daily CSVs in `logs/` |
 | Position sizing and risk limits | `risk/limits.py` — per-asset cap, gross exposure cap, stop-loss, daily loss halt |
-| Order states and error handling | Broker returns order id/status; engine catches and logs rejected orders and cycle errors without crashing |
+| Order states and error handling | Engine logs submitted → polls to filled / partially_filled / canceled; rejects invalid qty/side; catches API errors per order |
 | Backtest mode and paper trading mode | `run_backtest.py` / `run_live.py` (or the two UI tabs) |
-| Config for tickers, parameters, limits | `config.py` — a single flat settings file |
+| Config for tickers, parameters, limits | `config.py` — flat settings file with `validate_config()` on import |
 | Logging of data, signals, orders, P&L | `logs/quotes_YYYYMMDD.csv` (data) and `logs/engine.log` (events) |
-| Performance metrics (P&L, drawdown, trades, hit rate) | Live: engine snapshot shown in the UI. Backtest: `backtest/metrics.py` |
+| Performance metrics (P&L, drawdown, trades, hit rate) | Live UI: P&L, drawdown from peak, trades, hit rate. Backtest: `backtest/metrics.py` |
 | Tests | `tests/` — 11 offline unit tests |
 | Video walkthrough | Recorded separately by the group (see repo root for prior HW video placement, `hw3/Video/`) |
 
