@@ -25,7 +25,7 @@ from project.config import (
 )
 from project.data_connector.historical import fetch_daily_bars_for_universe
 from project.data_connector.quotes import fetch_latest_quotes, log_quotes
-from project.execution.broker import AlpacaBroker
+from project.execution.broker import AlpacaBroker, is_order_settled
 from project.risk.limits import (
     RiskState,
     apply_stop_losses,
@@ -174,7 +174,10 @@ class LiveTradingEngine:
 
         positions_before = self._broker.get_positions()
         targets = size_positions(signals, equity)
-        orders = self._rebalance(targets, positions_before, prices)
+        with self._lock:
+            tracked_orders = list(self._snapshot["orders"])
+        tracked_orders = self._refresh_orders(tracked_orders)
+        orders = self._merge_orders(tracked_orders, self._rebalance(targets, positions_before, prices))
 
         positions_after = self._broker.get_positions()
         self._log_position_fills(positions_before, positions_after)
@@ -279,6 +282,31 @@ class LiveTradingEngine:
 
         return orders
 
+    def _refresh_orders(self, orders: list[dict]) -> list[dict]:
+        """Re-fetch orders from Alpaca so partial fills update to full fills in the UI."""
+        refreshed: list[dict] = []
+        for order in orders:
+            if is_order_settled(order):
+                refreshed.append(order)
+                continue
+            try:
+                refreshed.append(self._broker.get_order(order["id"]))
+            except Exception as exc:
+                self._log_event(f"Order refresh failed for {order.get('id', '?')[:8]}…: {exc}")
+                refreshed.append(order)
+        return refreshed
+
+    @staticmethod
+    def _merge_orders(existing: list[dict], updates: list[dict]) -> list[dict]:
+        """Merge order lists by id; newer snapshots overwrite older ones for the same order."""
+        by_id = {order["id"]: order for order in existing}
+        order_ids = [order["id"] for order in existing]
+        for order in updates:
+            if order["id"] not in by_id:
+                order_ids.append(order["id"])
+            by_id[order["id"]] = order
+        return [by_id[order_id] for order_id in order_ids]
+
     def _log_order_status(self, order: dict, side: str, requested_qty: int) -> None:
         status = order["status"]
         filled_qty = order.get("filled_qty", 0.0)
@@ -349,5 +377,7 @@ class LiveTradingEngine:
     def _update_snapshot(self, **kwargs) -> None:
         with self._lock:
             if "orders" in kwargs:
-                kwargs["orders"] = (self._snapshot["orders"] + kwargs["orders"])[-50:]
+                kwargs["orders"] = self._merge_orders(
+                    self._snapshot["orders"], kwargs["orders"]
+                )[-50:]
             self._snapshot.update(kwargs)

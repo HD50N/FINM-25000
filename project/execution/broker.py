@@ -9,16 +9,26 @@ from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
 from hw1.data_connector.config import get_alpaca_credentials
 from project.config import ORDER_POLL_INTERVAL_SECONDS, ORDER_POLL_TIMEOUT_SECONDS
 
-# Alpaca statuses the assignment cares about, plus common terminals.
-TERMINAL_ORDER_STATUSES = {
+# Statuses where no further fills are expected. partially_filled is NOT terminal —
+# the order may still be working toward a full fill.
+SETTLED_ORDER_STATUSES = {
     "filled",
-    "partially_filled",
     "canceled",
     "cancelled",
     "rejected",
     "expired",
     "done_for_day",
 }
+
+
+def is_order_settled(order: dict) -> bool:
+    """True when the order will not receive more fills (fully done or dead)."""
+    status = order["status"]
+    if status in SETTLED_ORDER_STATUSES:
+        return True
+    if status == "partially_filled":
+        return order.get("filled_qty", 0.0) >= float(order.get("qty", 0))
+    return False
 
 
 class AlpacaBroker:
@@ -79,10 +89,10 @@ class AlpacaBroker:
         timeout_seconds: float = ORDER_POLL_TIMEOUT_SECONDS,
         poll_interval: float = ORDER_POLL_INTERVAL_SECONDS,
     ) -> dict:
-        """Poll until a terminal status (filled / partial / canceled / …) or timeout."""
+        """Poll until the order is fully settled (filled / canceled / …) or timeout."""
         deadline = time.monotonic() + timeout_seconds
         latest = self.get_order(order_id)
-        while latest["status"] not in TERMINAL_ORDER_STATUSES:
+        while not is_order_settled(latest):
             if time.monotonic() >= deadline:
                 break
             time.sleep(poll_interval)
