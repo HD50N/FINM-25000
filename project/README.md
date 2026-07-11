@@ -10,7 +10,9 @@ monitors and controls the whole system.
 `TradingClient(api_key, secret_key, paper=True)`. No real-money account, no
 credit card, no live capital is ever touched.
 
-This README covers the system as a whole: how it maps to the assignment, the
+Video link: https://youtu.be/lDtsqweuH74
+
+This README covers the system as a whole: how it maps to the project, the
 architecture, the design decisions and their justifications, and how to run
 it. Each subpackage has its own README with module-level detail:
 
@@ -27,9 +29,9 @@ it. Each subpackage has its own README with module-level detail:
 
 ---
 
-## How this maps to the assignment
+## How this maps to the project
 
-| Assignment requirement | Where it is implemented |
+| Project requirement | Where it is implemented |
 |---|---|
 | Systematic strategy (rule-based, no discretion) | `strategies/momentum.py` — deterministic SMA crossover rules |
 | Live data pipeline collecting quotes from Alpaca | `data_connector/quotes.py` — fetched every cycle, logged to CSV with timestamps/prices/volumes |
@@ -67,10 +69,10 @@ it. Each subpackage has its own README with module-level detail:
 ┌───────────────┐  ┌───────────────┐  ┌────────────────────────┐
 │ data_connector│  │ risk/limits   │  │ strategies/momentum    │
 │ quotes + bars │  │ sizing, stops │  │ SMA crossover signals  │
-└───────┬───────┘  └───────────────┘  └────────────────────────┘
-        │                  ▲
-        ▼                  │ orders
-┌───────────────┐  ┌───────┴───────┐
+└───────┬───────┘  └───────┬───────┘  └────────────────────────┘
+        │                  │
+        ▼                  ▼ orders
+┌───────────────┐  ┌───────────────┐
 │  Alpaca data  │  │ execution/    │
 │  API (IEX)    │  │ AlpacaBroker  │──► Alpaca paper trading API
 └───────────────┘  └───────────────┘
@@ -102,13 +104,13 @@ backtest and live trading share code.
 ## Design decisions and justification
 
 **Why a new `project/` package instead of spreading code around.** The
-assignment explicitly asks for a clear folder structure with separate
+project explicitly asks for a clear folder structure with separate
 modules for data, strategy, execution, risk, and UI. The repo already
 follows a one-folder-per-assignment layout (`hw1/`, `hw2/`, `hw3/`), so the
 final project gets the same treatment, with the assignment's suggested
 subfolder names.
 
-**Why the strategy is a daily SMA crossover.** The assignment allows any
+**Why the strategy is a daily SMA crossover.** The project allows any
 rule-based strategy and asks for documented intuition. A 20/50-day crossover
 is (a) genuinely systematic — zero discretion, two parameters, (b) directly
 in the lineage of HW2's trend-following work, so it fits the course arc, and
@@ -149,7 +151,7 @@ the exact same `risk.limits.size_positions` as the live engine. A backtest
 that sizes positions differently from production is not evidence about
 production; sharing the code closes that gap.
 
-**Why Tkinter for the UI.** The assignment allows any lightweight GUI
+**Why Tkinter for the UI.** The project allows any lightweight GUI
 toolkit. The repo already has a shared Tkinter terminal (`app/terminal.py`)
 with one tab per assignment, and every previous assignment integrated with
 it. The project adds two tabs (Paper Trading, Project Backtest) rather than
@@ -163,7 +165,7 @@ writes a snapshot dict under a lock; the Tk thread reads it on a 1-second
 `app/terminal.py` and keeps every Tk widget mutation on the main thread,
 which Tkinter requires.
 
-**Why plain CSVs and a text log for storage.** The assignment asks for
+**Why plain CSVs and a text log for storage.** The project asks for
 structured storage and basic logging; daily CSV files with a fixed header
 (`timestamp, symbol, bid, ask, last, volume`) are structured, append-only,
 inspectable with pandas, and require no database dependency. Engine events go
@@ -183,7 +185,7 @@ The project deliberately reuses the repo's established conventions:
   `QuoteStreamer` and the terminal).
 - **Folder shape**: `data_connector/`, `strategies/`, `backtest/`, `viz/`
   mirror `hw2/` and `hw3/`; `risk/`, `execution/`, `engine/`, `ui/`,
-  `tests/` are added per the assignment spec.
+  `tests/` are added per the project spec.
 - **Config**: a flat `config.py` of UPPER_CASE constants, like `hw3/config.py`.
 - **Entry points**: `run_backtest.py` / `run_live.py` insert the repo root
   into `sys.path`, exactly like `main.py` and `hw3/run_backtest.py`.
@@ -240,19 +242,16 @@ shallower maximum drawdown (−26% vs −43%), because it steps into cash when
 trends break. Charts are saved to `project/charts/`
 (`equity_curve.png`, `drawdown.png`, `exposure.png`).
 
+Example usage is provided in the video link above and the example_screenshots folder with pictures of the UI.
+
 ## Limitations and possible improvements
 
-- **Market orders only.** Limit orders would control slippage on rebalances;
-  order-state handling would then need to manage partial fills and timeouts.
-- **Daily signals.** Intraday information only enters through the stop-loss
-  check on live quotes; an intraday strategy would need the WebSocket stream.
-- **Idealized backtest fills.** Trades fill at the daily close with no
-  slippage or spread (Alpaca is commission-free, so no commissions is
-  accurate).
-- **IEX data feed.** The free feed covers a subset of consolidated volume;
-  fine for signals on liquid names, not for microstructure work.
-- **In-memory trade history.** Hit rate and trade counts reset when the
-  engine restarts; a SQLite trade journal would persist them.
-- **Single strategy.** The module layout supports multiple strategies
-  (`strategies/` is a package); a next step is combining trend with
-  mean-reversion sleeves.
+- The strategy itself is intentionally simple. It relies on a single moving-average crossover and therefore may underperform in sideways markets.
+- The project is designed exclusively for Alpaca's paper trading environment and makes market orders only, increasing the likelihood of slippage.
+- The backtesting system currently ignores commission and slippage (Alpaca is commission-free, but fills are idealized at the close), which makes returns misleading, especially for strategies that execute trades at higher frequency.
+- Signals use daily bars, so intraday moves only matter through the stop-loss.
+
+- Incorporating limit orders would reduce slippage on rebalances.
+- We could also implement additional trading strategies, expand the risk management framework, support multiple brokers, and add larger universes of assets.
+- Possible additional improvements: volatility-scaled position sizing, a short leg,
+  persistent trade database

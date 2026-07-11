@@ -23,7 +23,7 @@ sequences the other modules.
 1. Refresh equity/cash; if the calendar day changed, reset `RiskState`
    (new day-start equity, entry prices re-seeded from actual positions).
 2. Fetch latest quotes for the universe and append them to
-   `logs/quotes_YYYYMMDD.csv` — the assignment's live data pipeline with
+   `logs/quotes_YYYYMMDD.csv` — the project's live data pipeline with
    logging of timestamps, prices, and volumes.
 3. Fetch daily bars and compute `latest_signal` per symbol.
 4. Risk: `check_daily_loss` (halt ⇒ all signals to 0 ⇒ full liquidation),
@@ -66,5 +66,4 @@ in the snapshot for the UI — the same `write_log_line` format as
 `hw3/paper_trade.py`.
 
 **Known limitation.** Trade count and hit rate live in memory and reset on
-restart; positions and P&L do not (they come from the broker). A persistent
-trade journal is listed as an improvement in the project README.
+restart; positions and P&L do not (they come from the broker).

@@ -8,8 +8,7 @@ enforced in exactly one line of code.
 
 - `__init__` — builds `TradingClient(api_key, secret_key, paper=True)`.
   `paper=True` is hard-coded, not configurable: there is deliberately no
-  flag, env var, or code path that could reach a real-money account, per the
-  assignment's hard requirement.
+  flag, env var, or code path that could reach a real-money account.
 - `get_equity_and_cash()` — account snapshot for sizing and P&L.
 - `get_positions()` — `dict[symbol, {qty, avg_entry_price, market_value,
   unrealized_pl}]`, the ground truth the engine rebalances against.

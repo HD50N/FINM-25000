@@ -33,7 +33,7 @@ and `hw2/data_connector/historical.py`.
 (`DataFeed.IEX` everywhere since HW1). Sufficient for daily-bar signals on
 liquid large caps.
 
-**Why daily CSV files.** The assignment asks for structured storage and
+**Why daily CSV files.** They allow for structured storage and
 logging of incoming data (timestamps, prices, volumes). Append-only CSVs
 with a fixed header are structured, human-inspectable, loadable with
 `pd.read_csv`, and need no extra dependency. One file per day keeps files

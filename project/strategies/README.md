@@ -36,14 +36,9 @@ and one of the tests (`test_signals_are_shifted_no_lookahead`) locks it in.
 
 **Why 20/50 days.** Standard short/intermediate trend windows; 20 matches
 the rolling windows used across HW2/HW3. Both are single constants in
-`project/config.py`, so tuning them requires no code change — a requirement
-of the assignment (strategy parameters in config).
+`project/config.py`, so tuning them requires no code change.
 
 **Why the signal is binary rather than weighted.** Position *sizing* is the
 risk module's job (`risk/limits.py`). Keeping the strategy's output to
-{0, 1} keeps the separation of concerns the assignment asks for: strategy
+{0, 1} keeps the separation of concerns the project asks for: strategy
 says *what* to hold, risk says *how much*.
-
-**Why one strategy.** Depth over breadth: the engineering around the signal
-(pipeline, risk, execution, UI) is the substance of the project. The package
-layout supports adding more strategy modules alongside `momentum.py`.

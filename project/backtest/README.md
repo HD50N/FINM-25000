@@ -1,9 +1,7 @@
 # `backtest/` — Historical simulation
 
-Backtest mode required by the assignment: the same strategy and the same
-position-sizing code as live trading, run over five years of daily Alpaca
-bars for the whole universe, compared against an equal-weight buy-and-hold
-benchmark.
+Backtest mode: the same strategy and the same position-sizing code as live trading, run over five years of daily Alpaca
+bars for the whole universe, compared against an equal-weight buy-and-hold benchmark.
 
 ## Files
 
@@ -25,8 +23,7 @@ benchmark.
 **The backtest reuses the live risk code.** Weights come from the very same
 `size_positions` function the live engine calls. If a sizing rule changes in
 `risk/limits.py`, the backtest changes with it automatically — the backtest
-stays evidence about the system that actually trades, which is the point of
-having a backtest mode at all.
+remains evidence of how the live trading system would behave.
 
 **No look-ahead.** Signals are already shifted one bar inside
 `generate_signals`; day *t*'s weights are therefore based on information
@@ -45,8 +42,7 @@ on intraday prices the daily backtest doesn't see — so backtest results are,
 if anything, conservative about what the risk layer adds.
 
 **Style lineage.** The engine/metrics/runner split, the metric set, and the
-formatted `metrics_table` mirror `hw2/backtest/` and `hw3/backtest/`, so
-anyone who read those assignments can read this immediately.
+formatted `metrics_table` mirror `hw2/backtest/` and `hw3/backtest/`.
 
 ## Example output (July 2026, default config)
 

@@ -30,8 +30,7 @@ cannot drift apart.
 | Stop-loss | 5% from entry | A trend that instantly loses 5% was a false breakout; exit rather than wait for the slow crossover to confirm |
 | Daily loss halt | 3% of day-start equity | Circuit breaker against fast market breaks and, importantly, against *system bugs* — a runaway engine can lose at most ~3% a day |
 
-All four are constants in `project/config.py`, satisfying the assignment's
-"risk limits in configuration" requirement.
+All four are constants in `project/config.py`.
 
 ## Design notes and justification
 

@@ -1,6 +1,6 @@
-# FINM-25000 — Market Data Terminal & Backtesting
+# FINM-25000 — Assignments and Project Overview
 
-Acknowledgements: with the permission of the professor, AI was used to assist with the assignment, help debug the code, and provide conceptual explanations.
+Acknowledgements: with the permission of the professor, AI was used to assist with the assignments and project, help debug the code, and provide conceptual explanations.
 
 ## Project layout
 
@@ -138,6 +138,8 @@ Alpaca, a trend-following strategy generates signals, a risk module sizes and
 limits positions, and a trading engine turns targets into paper orders. The
 Tkinter UI monitors and controls the whole system.
 
+Video link: https://youtu.be/lDtsqweuH74
+
 **Paper trading only — no real money is ever used** (`TradingClient(..., paper=True)`).
 
 This section is the overview; **[`project/README.md`](project/README.md)** has
@@ -166,10 +168,10 @@ with module-level detail.
 ┌───────────────┐  ┌───────────────┐  ┌────────────────────────┐
 │ data_connector│  │ risk/limits   │  │ strategies/momentum    │
 │ quotes + bars │  │ sizing, stops │  │ SMA crossover signals  │
-└───────┬───────┘  └───────────────┘  └────────────────────────┘
-        │                  ▲
-        ▼                  │ orders
-┌───────────────┐  ┌───────┴───────┐
+└───────┬───────┘  └───────┬───────┘  └────────────────────────┘
+        │                  │
+        ▼                  ▼ orders
+┌───────────────┐  ┌───────────────┐
 │  Alpaca data  │  │ execution/    │
 │  API (IEX)    │  │ AlpacaBroker  │──► Alpaca paper trading API
 └───────────────┘  └───────────────┘
@@ -201,7 +203,7 @@ Trend-following moving average crossover on a 10-stock universe: hold a stock
 while its 20-day SMA is above its 50-day SMA, otherwise stay in cash. Signals
 are shifted one bar so a crossover observed at today's close is traded
 tomorrow (no look-ahead). The intuition: prices trend because information
-diffuses gradually and investors herd, so recent strength tends to persist.
+diffuses gradually and investors herd, so recent strength tends to persist. The strategy should generate returns because it attempts to participate during sustained upward trends while moving to cash when the trend weakens. Although we made the signal simple, by integrating the risk control parameters below into the strategy, we believe we could capture the opportunities more safely, generating more consistent, disciplined revenue.
 
 ### Risk controls
 
@@ -234,9 +236,12 @@ python -m pytest project/tests    # unit tests
 
 ### Limitations and possible improvements
 
-- Market orders only; limit orders would reduce slippage on rebalances.
+- The strategy itself is intentionally simple. It relies on a single moving-average crossover and therefore may underperform in sideways markets.
+- The project is designed exclusively for Alpaca's paper trading environment and makes market orders only, increasing the likelihood of slippage.
+- The backtesting system currently ignores commission and slippage (Alpaca is commission-free, but fills are idealized at the close), which makes returns misleading, especially for strategies that execute trades at higher frequency.
 - Signals use daily bars, so intraday moves only matter through the stop-loss.
-- The backtest ignores commissions and slippage (Alpaca is commission-free,
-  but fills are idealized at the close).
-- Possible next steps: volatility-scaled position sizing, a short leg,
-  persistent trade database, and richer order-state tracking (partial fills).
+
+- Incorporating limit orders would reduce slippage on rebalances.
+- We could also implement additional trading strategies, expand the risk management framework, support multiple brokers, and add larger universes of assets.
+- Possible additional improvements: volatility-scaled position sizing, a short leg,
+  persistent trade database
